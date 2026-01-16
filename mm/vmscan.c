@@ -183,7 +183,7 @@ int vm_swappiness = 60;
 
 struct kcompress_t kcompress_data[MAX_NUMNODES];
 
-#define DEF_KSWAPD_THREADS_PER_NODE 2
+#define DEF_KSWAPD_THREADS_PER_NODE 1
 static int kswapd_threads = DEF_KSWAPD_THREADS_PER_NODE;
 static int __init kswapd_per_node_setup(char *str)
 {
