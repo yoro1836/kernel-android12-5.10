@@ -468,7 +468,6 @@ struct sched_entity {
 	u64				sum_exec_runtime;
 	u64				vruntime;
 	u64				prev_sum_exec_runtime;
-
 	u64				nr_migrations;
 
 	struct sched_statistics		statistics;
@@ -494,10 +493,17 @@ struct sched_entity {
 	struct sched_avg		avg;
 #endif
 
+#ifdef CONFIG_SCHED_BORE
+	ANDROID_KABI_USE(1, u64 burst_time);
+	ANDROID_KABI_USE2(2, u8 prev_burst_penalty; u8 curr_burst_penalty; u8 burst_penalty; u8 burst_score, u32 child_burst_cnt);
+	ANDROID_KABI_USE(3, u64 child_burst_last_cached);
+	ANDROID_KABI_USE2(4, u8 child_burst, u8 __bore_reserved[7]);
+#else
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
 	ANDROID_KABI_RESERVE(4);
+#endif
 };
 
 struct sched_rt_entity {
