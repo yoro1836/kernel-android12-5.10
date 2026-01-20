@@ -393,6 +393,11 @@ static void activate_page(struct page *page)
 }
 #endif
 
+void folio_activate(struct folio *folio)
+{
+	activate_page(&folio->page);
+}
+
 static void __lru_cache_activate_page(struct page *page)
 {
 	struct pagevec *pvec;
@@ -423,6 +428,40 @@ static void __lru_cache_activate_page(struct page *page)
 	local_unlock(&lru_pvecs.lock);
 }
 
+#ifdef CONFIG_LRU_GEN
+static void folio_inc_refs(struct folio *folio)
+{
+	unsigned long new_flags, old_flags = READ_ONCE(folio_flags(folio));
+
+	if (folio_test_unevictable(folio))
+		return;
+
+	if (!folio_test_referenced(folio)) {
+		folio_set_referenced(folio);
+		return;
+	}
+
+	if (!folio_test_workingset(folio)) {
+		folio_set_workingset(folio);
+		return;
+	}
+
+	/* see the comment on MAX_NR_TIERS */
+	do {
+		new_flags = old_flags & LRU_REFS_MASK;
+		if (new_flags == LRU_REFS_MASK)
+			break;
+
+		new_flags += BIT(LRU_REFS_PGOFF);
+		new_flags |= old_flags & ~LRU_REFS_MASK;
+	} while (!try_cmpxchg(&folio_flags(folio), &old_flags, new_flags));
+}
+#else
+static void folio_inc_refs(struct folio *folio)
+{
+}
+#endif /* CONFIG_LRU_GEN */
+
 /*
  * Mark a page as having seen activity.
  *
@@ -436,6 +475,11 @@ static void __lru_cache_activate_page(struct page *page)
 void mark_page_accessed(struct page *page)
 {
 	page = compound_head(page);
+
+	if (lru_gen_enabled()) {
+		folio_inc_refs(page_folio(page));
+		return;
+	}
 
 	trace_android_vh_mark_page_accessed(page);
 	if (!PageReferenced(page)) {
@@ -480,6 +524,11 @@ void lru_cache_add(struct page *page)
 
 	VM_BUG_ON_PAGE(PageActive(page) && PageUnevictable(page), page);
 	VM_BUG_ON_PAGE(PageLRU(page), page);
+
+	/* see the comment in lru_gen_add_folio() */
+	if (lru_gen_enabled() && !PageUnevictable(page) &&
+	    lru_gen_in_fault() && !(current->flags & PF_MEMALLOC))
+		SetPageActive(page);
 
 	get_page(page);
 	local_lock(&lru_pvecs.lock);
@@ -591,7 +640,8 @@ static void lru_deactivate_file_fn(struct page *page, struct lruvec *lruvec,
 static void lru_deactivate_fn(struct page *page, struct lruvec *lruvec,
 			    void *arg)
 {
-	if (PageLRU(page) && PageActive(page) && !PageUnevictable(page)) {
+	if (PageLRU(page) && !PageUnevictable(page) &&
+	    (PageActive(page) || lru_gen_enabled())) {
 		int lru = page_lru_base_type(page);
 		int nr_pages = thp_nr_pages(page);
 
@@ -733,7 +783,8 @@ void deactivate_file_page(struct page *page)
  */
 void deactivate_page(struct page *page)
 {
-	if (PageLRU(page) && PageActive(page) && !PageUnevictable(page)) {
+	if (PageLRU(page) && !PageUnevictable(page) &&
+	    (PageActive(page) || lru_gen_enabled())) {
 		struct pagevec *pvec;
 
 		local_lock(&lru_pvecs.lock);

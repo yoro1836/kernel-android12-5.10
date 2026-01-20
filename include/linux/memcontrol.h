@@ -332,6 +332,11 @@ struct mem_cgroup {
 	struct deferred_split deferred_split_queue;
 #endif
 
+#ifdef CONFIG_LRU_GEN
+	/* per-memcg mm_struct list */
+	struct lru_gen_mm_list mm_list;
+#endif
+
 	ANDROID_OEM_DATA(1);
 	struct mem_cgroup_per_node *nodeinfo[0];
 	/* WARNING: nodeinfo must be the last member here */
@@ -444,6 +449,47 @@ static inline bool mem_cgroup_below_min(struct mem_cgroup *memcg)
 
 	return READ_ONCE(memcg->memory.emin) >=
 		page_counter_read(&memcg->memory);
+}
+
+static inline struct obj_cgroup *__folio_objcg(struct folio *folio)
+{
+	return NULL;
+}
+
+/*
+ * The caller must ensure the memcg lifetime via one of the following:
+ * - LRU isolation
+ * - lock_page_memcg()
+ * - exclusive reference
+ * - mem_cgroup_trylock_pages()
+ */
+static inline struct mem_cgroup *folio_memcg(struct folio *folio)
+{
+#ifdef CONFIG_MEMCG
+	return folio_page(folio, 0)->mem_cgroup;
+#else
+	return NULL;
+#endif
+}
+
+/*
+ * The caller must ensure the memcg lifetime via one of the following:
+ * - LRU isolation
+ * - lock_page_memcg()
+ * - exclusive reference
+ * - mem_cgroup_trylock_pages()
+ */
+static inline struct mem_cgroup *folio_memcg_rcu(struct folio *folio)
+{
+#ifdef CONFIG_MEMCG
+	return READ_ONCE(folio_page(folio, 0)->mem_cgroup);
+#else
+	return NULL;
+#endif
+}
+
+static inline void folio_memcg_unlock(struct folio *folio)
+{
 }
 
 int __mem_cgroup_charge(struct page *page, struct mm_struct *mm,
@@ -737,6 +783,23 @@ static inline unsigned long memcg_page_state_local(struct mem_cgroup *memcg,
 }
 
 void __mod_memcg_state(struct mem_cgroup *memcg, int idx, int val);
+
+/* try to stabilize folio_memcg() for all the pages in a memcg */
+static inline bool mem_cgroup_trylock_pages(struct mem_cgroup *memcg)
+{
+	rcu_read_lock();
+
+	if (mem_cgroup_disabled() || !atomic_read(&memcg->moving_account))
+		return true;
+
+	rcu_read_unlock();
+	return false;
+}
+
+static inline void mem_cgroup_unlock_pages(void)
+{
+	rcu_read_unlock();
+}
 
 /* idx can be of type enum memcg_stat_item or node_stat_item */
 static inline void mod_memcg_state(struct mem_cgroup *memcg,
@@ -1212,6 +1275,18 @@ static inline void __mod_memcg_state(struct mem_cgroup *memcg,
 				     int idx,
 				     int nr)
 {
+}
+
+static inline bool mem_cgroup_trylock_pages(struct mem_cgroup *memcg)
+{
+	/* to match folio_memcg_rcu() */
+	rcu_read_lock();
+	return true;
+}
+
+static inline void mem_cgroup_unlock_pages(void)
+{
+	rcu_read_unlock();
 }
 
 static inline void mod_memcg_state(struct mem_cgroup *memcg,

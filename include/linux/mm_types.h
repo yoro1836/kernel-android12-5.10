@@ -3,6 +3,7 @@
 #define _LINUX_MM_TYPES_H
 
 #include <linux/mm_types_task.h>
+#include <linux/sched.h>
 
 #include <linux/auxvec.h>
 #include <linux/list.h>
@@ -15,6 +16,7 @@
 #include <linux/page-flags-layout.h>
 #include <linux/workqueue.h>
 #include <linux/seqlock.h>
+#include <linux/mmdebug.h>
 #include <linux/android_kabi.h>
 
 #include <asm/mmu.h>
@@ -28,6 +30,7 @@
 
 struct address_space;
 struct mem_cgroup;
+struct folio;
 
 /*
  * Each physical page in the system has a struct page associated with
@@ -227,6 +230,13 @@ struct page {
 	int _last_cpupid;
 #endif
 } _struct_page_alignment;
+
+/*
+ * Folios are currently backed by struct page in this tree.
+ */
+struct folio {
+	struct page page;
+};
 
 static inline atomic_t *compound_mapcount_ptr(struct page *page)
 {
@@ -593,13 +603,30 @@ struct mm_struct {
 #ifdef CONFIG_HUGETLB_PAGE
 		atomic_long_t hugetlb_usage;
 #endif
-		struct work_struct async_put_work;
+	struct work_struct async_put_work;
 
 #ifdef CONFIG_IOMMU_SUPPORT
-		u32 pasid;
+	u32 pasid;
 #endif
 
-		ANDROID_KABI_RESERVE(1);
+#ifdef CONFIG_LRU_GEN
+	struct {
+		/* this mm_struct is on lru_gen_mm_list */
+		struct list_head list;
+		/*
+		 * Set when switching to this mm_struct, as a hint of
+		 * whether it has been used since the last time per-node
+		 * page table walkers cleared the corresponding bits.
+		 */
+		unsigned long bitmap;
+#ifdef CONFIG_MEMCG
+		/* points to the memcg of "owner" above */
+		struct mem_cgroup *memcg;
+#endif
+	} lru_gen;
+#endif /* CONFIG_LRU_GEN */
+
+	ANDROID_KABI_RESERVE(1);
 	} __randomize_layout;
 
 	/*
@@ -625,6 +652,65 @@ static inline cpumask_t *mm_cpumask(struct mm_struct *mm)
 {
 	return (struct cpumask *)&mm->cpu_bitmap;
 }
+
+#ifdef CONFIG_LRU_GEN
+
+struct lru_gen_mm_list {
+	/* mm_struct list for page table walkers */
+	struct list_head fifo;
+	/* protects the list above */
+	spinlock_t lock;
+};
+
+void lru_gen_add_mm(struct mm_struct *mm);
+void lru_gen_del_mm(struct mm_struct *mm);
+#ifdef CONFIG_MEMCG
+void lru_gen_migrate_mm(struct mm_struct *mm);
+#endif
+
+static inline void lru_gen_init_mm(struct mm_struct *mm)
+{
+	INIT_LIST_HEAD(&mm->lru_gen.list);
+	mm->lru_gen.bitmap = 0;
+#ifdef CONFIG_MEMCG
+	mm->lru_gen.memcg = NULL;
+#endif
+}
+
+static inline void lru_gen_use_mm(struct mm_struct *mm)
+{
+	/* unlikely but not a bug when racing with lru_gen_migrate_mm() */
+	VM_WARN_ON_ONCE(list_empty(&mm->lru_gen.list));
+
+	if (!(current->flags & PF_KTHREAD))
+		WRITE_ONCE(mm->lru_gen.bitmap, -1);
+}
+
+#else /* !CONFIG_LRU_GEN */
+
+static inline void lru_gen_add_mm(struct mm_struct *mm)
+{
+}
+
+static inline void lru_gen_del_mm(struct mm_struct *mm)
+{
+}
+
+#ifdef CONFIG_MEMCG
+static inline void lru_gen_migrate_mm(struct mm_struct *mm)
+{
+}
+#endif
+
+static inline void lru_gen_init_mm(struct mm_struct *mm)
+{
+}
+
+static inline void lru_gen_use_mm(struct mm_struct *mm)
+{
+}
+
+#endif /* CONFIG_LRU_GEN */
 
 struct mmu_gather;
 extern void tlb_gather_mmu(struct mmu_gather *tlb, struct mm_struct *mm,

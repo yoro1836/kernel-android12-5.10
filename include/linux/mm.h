@@ -44,6 +44,182 @@ struct writeback_control;
 struct bdi_writeback;
 struct pt_regs;
 
+/*
+ * Folio helpers backed by struct page for older kernels.
+ */
+static inline struct folio *page_folio(struct page *page)
+{
+	return (struct folio *)page;
+}
+
+static inline struct page *folio_page(struct folio *folio, unsigned long n)
+{
+	return ((struct page *)folio) + n;
+}
+
+#define folio_flags(folio)	(folio_page((folio), 0)->flags)
+#define folio_lru(folio)	(folio_page((folio), 0)->lru)
+
+static inline int folio_nr_pages(struct folio *folio)
+{
+	return thp_nr_pages(folio_page(folio, 0));
+}
+
+static inline int folio_zonenum(struct folio *folio)
+{
+	return page_zonenum(folio_page(folio, 0));
+}
+
+static inline int folio_nid(struct folio *folio)
+{
+	return page_to_nid(folio_page(folio, 0));
+}
+
+static inline struct pglist_data *folio_pgdat(struct folio *folio)
+{
+	return page_pgdat(folio_page(folio, 0));
+}
+
+static inline bool folio_mapped(struct folio *folio)
+{
+	return page_mapped(folio_page(folio, 0));
+}
+
+static inline int folio_ref_count(struct folio *folio)
+{
+	return page_ref_count(folio_page(folio, 0));
+}
+
+static inline bool folio_try_get(struct folio *folio)
+{
+	return get_page_unless_zero(folio_page(folio, 0));
+}
+
+static inline void folio_get(struct folio *folio)
+{
+	get_page(folio_page(folio, 0));
+}
+
+static inline void folio_put(struct folio *folio)
+{
+	put_page(folio_page(folio, 0));
+}
+
+static inline bool folio_test_active(struct folio *folio)
+{
+	return PageActive(folio_page(folio, 0));
+}
+
+static inline void folio_set_active(struct folio *folio)
+{
+	SetPageActive(folio_page(folio, 0));
+}
+
+static inline void folio_clear_active(struct folio *folio)
+{
+	ClearPageActive(folio_page(folio, 0));
+}
+
+static inline bool folio_test_anon(struct folio *folio)
+{
+	return PageAnon(folio_page(folio, 0));
+}
+
+static inline bool folio_test_swapbacked(struct folio *folio)
+{
+	return PageSwapBacked(folio_page(folio, 0));
+}
+
+static inline void folio_set_swapbacked(struct folio *folio)
+{
+	SetPageSwapBacked(folio_page(folio, 0));
+}
+
+static inline bool folio_test_swapcache(struct folio *folio)
+{
+	return PageSwapCache(folio_page(folio, 0));
+}
+
+static inline bool folio_test_reclaim(struct folio *folio)
+{
+	return PageReclaim(folio_page(folio, 0));
+}
+
+static inline void folio_clear_reclaim(struct folio *folio)
+{
+	ClearPageReclaim(folio_page(folio, 0));
+}
+
+static inline bool folio_test_referenced(struct folio *folio)
+{
+	return PageReferenced(folio_page(folio, 0));
+}
+
+static inline void folio_set_referenced(struct folio *folio)
+{
+	SetPageReferenced(folio_page(folio, 0));
+}
+
+static inline void folio_clear_referenced(struct folio *folio)
+{
+	ClearPageReferenced(folio_page(folio, 0));
+}
+
+static inline bool folio_test_workingset(struct folio *folio)
+{
+	return PageWorkingset(folio_page(folio, 0));
+}
+
+static inline void folio_set_workingset(struct folio *folio)
+{
+	SetPageWorkingset(folio_page(folio, 0));
+}
+
+static inline bool folio_test_unevictable(struct folio *folio)
+{
+	return PageUnevictable(folio_page(folio, 0));
+}
+
+static inline void folio_set_unevictable(struct folio *folio)
+{
+	SetPageUnevictable(folio_page(folio, 0));
+}
+
+static inline bool folio_test_lru(struct folio *folio)
+{
+	return PageLRU(folio_page(folio, 0));
+}
+
+static inline bool folio_test_clear_lru(struct folio *folio)
+{
+	return TestClearPageLRU(folio_page(folio, 0));
+}
+
+static inline bool folio_test_locked(struct folio *folio)
+{
+	return PageLocked(folio_page(folio, 0));
+}
+
+static inline bool folio_test_dirty(struct folio *folio)
+{
+	return PageDirty(folio_page(folio, 0));
+}
+
+static inline void folio_mark_dirty(struct folio *folio)
+{
+	set_page_dirty(folio_page(folio, 0));
+}
+
+static inline bool folio_test_writeback(struct folio *folio)
+{
+	return PageWriteback(folio_page(folio, 0));
+}
+
+static inline bool folio_evictable(struct folio *folio)
+{
+	return page_evictable(folio_page(folio, 0));
+}
+
 extern int sysctl_page_lock_unfairness;
 
 void init_mm_internals(void);
@@ -229,6 +405,21 @@ int overcommit_policy_handler(struct ctl_table *, int, void *, size_t *,
 
 #define nth_page(page,n) pfn_to_page(page_to_pfn((page)) + (n))
 
+static inline unsigned long folio_pfn(struct folio *folio)
+{
+	return page_to_pfn(folio_page(folio, 0));
+}
+
+static inline struct folio *pfn_folio(unsigned long pfn)
+{
+	return page_folio(pfn_to_page(pfn));
+}
+
+static inline atomic_t *folio_pincount_ptr(struct folio *folio)
+{
+	return &folio_page(folio, 1)->compound_pincount;
+}
+
 /* to align the pointer to the (next) page boundary */
 #define PAGE_ALIGN(addr) ALIGN(addr, PAGE_SIZE)
 
@@ -236,6 +427,7 @@ int overcommit_policy_handler(struct ctl_table *, int, void *, size_t *,
 #define PAGE_ALIGNED(addr)	IS_ALIGNED((unsigned long)(addr), PAGE_SIZE)
 
 #define lru_to_page(head) (list_entry((head)->prev, struct page, lru))
+#define lru_to_folio(head) page_folio(lru_to_page(head))
 
 /*
  * Linux kernel virtual memory manager primitives.
@@ -1115,11 +1307,27 @@ vm_fault_t finish_mkwrite_fault(struct vm_fault *vmf);
  */
 
 /* Page flags: | [SECTION] | [NODE] | ZONE | [LAST_CPUPID] | ... | FLAGS | */
+#ifndef SECTIONS_PGOFF
 #define SECTIONS_PGOFF		((sizeof(unsigned long)*8) - SECTIONS_WIDTH)
+#endif
+#ifndef NODES_PGOFF
 #define NODES_PGOFF		(SECTIONS_PGOFF - NODES_WIDTH)
+#endif
+#ifndef ZONES_PGOFF
 #define ZONES_PGOFF		(NODES_PGOFF - ZONES_WIDTH)
+#endif
+#ifndef LAST_CPUPID_PGOFF
 #define LAST_CPUPID_PGOFF	(ZONES_PGOFF - LAST_CPUPID_WIDTH)
+#endif
+#ifndef KASAN_TAG_PGOFF
 #define KASAN_TAG_PGOFF		(LAST_CPUPID_PGOFF - KASAN_TAG_WIDTH)
+#endif
+#ifndef LRU_GEN_PGOFF
+#define LRU_GEN_PGOFF		(KASAN_TAG_PGOFF - LRU_GEN_WIDTH)
+#endif
+#ifndef LRU_REFS_PGOFF
+#define LRU_REFS_PGOFF		(LRU_GEN_PGOFF - LRU_REFS_WIDTH)
+#endif
 
 /*
  * Define the bit shifts to access each section.  For non-existent

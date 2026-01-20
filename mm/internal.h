@@ -63,6 +63,10 @@ extern void put_vma(struct vm_area_struct *vma);
 
 void free_pgtables(struct mmu_gather *tlb, struct vm_area_struct *start_vma,
 		unsigned long floor, unsigned long ceiling);
+void folio_rotate_reclaimable(struct folio *folio);
+bool __folio_end_writeback(struct folio *folio);
+void deactivate_file_folio(struct folio *folio);
+void folio_activate(struct folio *folio);
 
 static inline bool can_madv_lru_vma(struct vm_area_struct *vma)
 {
