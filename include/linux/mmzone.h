@@ -2,6 +2,16 @@
 #ifndef _LINUX_MMZONE_H
 #define _LINUX_MMZONE_H
 
+/*
+ * Evictable pages are divided into multiple generations. The youngest and the
+ * oldest generation numbers, max_seq and min_seq, are monotonically increasing.
+ * They form a sliding window of a variable size [MIN_NR_GENS, MAX_NR_GENS].
+ * These must be defined before __GENERATING_BOUNDS_H check for bounds.c.
+ */
+#define MIN_NR_GENS		2U
+#define MAX_NR_GENS		4U
+#define MAX_NR_TIERS		4U
+
 #ifndef __ASSEMBLY__
 #ifndef __GENERATING_BOUNDS_H
 
@@ -274,15 +284,7 @@ static inline bool is_active_lru(enum lru_list lru)
 
 #define ANON_AND_FILE 2
 
-/*
- * Evictable pages are divided into multiple generations. The youngest and the
- * oldest generation numbers, max_seq and min_seq, are monotonically increasing.
- * They form a sliding window of a variable size [MIN_NR_GENS, MAX_NR_GENS].
- */
-#define MIN_NR_GENS		2U
-#define MAX_NR_GENS		4U
-/* see the comment on LRU_REFS_WIDTH */
-#define MAX_NR_TIERS		4U
+/* see the comment on LRU_REFS_WIDTH (MIN_NR_GENS/MAX_NR_GENS/MAX_NR_TIERS defined at top of file) */
 
 enum lruvec_flags {
 	LRUVEC_CONGESTED,		/* lruvec has many dirty pages
